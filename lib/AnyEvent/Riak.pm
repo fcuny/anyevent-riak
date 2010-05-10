@@ -4,89 +4,34 @@ use strict;
 use warnings;
 
 use Carp;
-use URI;
 use JSON;
 use AnyEvent;
 use AnyEvent::HTTP;
 use MIME::Base64;
 use YAML::Syck;
 
+use Moose;
+with qw/
+  AnyEvent::Riak::Role::CVCB
+  AnyEvent::Riak::Role::HTTPUtils
+  /;
+
+use AnyEvent::Riak::Bucket;
+
 our $VERSION = '0.02';
 
-sub new {
-    my ($class, %args) = @_;
-
-    my $host        = delete $args{host}        || 'http://127.0.0.1:8098';
-    my $path        = delete $args{path}        || 'riak';
-    my $mapred_path = delete $args{mapred_path} || 'mapred';
-    my $r           = delete $args{r}           || 2;
-    my $w           = delete $args{w}           || 2;
-    my $dw          = delete $args{dw}          || 2;
-
-    my $client_id =
-      "perl_anyevent_riak_" . encode_base64(int(rand(10737411824)), '');
-
-    bless {
-        host        => $host,
-        path        => $path,
-        mapred_path => $mapred_path,
-        client_id   => $client_id,
-        r           => $r,
-        w           => $w,
-        dw          => $dw,
-        %args,
-    }, $class;
-}
-
-sub _build_uri {
-    my ($self, $path, $options) = @_;
-    my $uri = URI->new($self->{host});
-    $uri->path(join("/", @$path));
-    $uri->query_form($self->_build_query($options));
-    return $uri->as_string;
-}
-
-sub _build_headers {
-    my ($self, $options) = @_;
-    my $headers = delete $options->{headers} || {};
-
-    $headers->{'X-Riak-ClientId'} = $self->{client_id};
-    $headers->{'Content-Type'}    = 'application/json'
-      unless exists $headers->{'Content-Type'};
-    return $headers;
-}
-
-sub _build_query {
-    my ($self, $options) = @_;
-    my $valid_options = [qw/props keys returnbody/];
-    my $query;
-    foreach (@$valid_options) {
-        $query->{$_} = $options->{$_} if exists $options->{$_};
-    }
-    $query;
-}
-
-sub default_cb {
-    my ($self, $options) = @_;
-    return sub {
-        my $res = shift;
-        return $res;
-    };
-}
-
-sub cvcb {
-    my ($self, $options) = @_;
-
-    my ($cv, $cb);
-    $cv = AE::cv;
-    if ($options->{callback}) {
-        $cb = delete $options->{callback};
-    }
-    else {
-        $cb = $self->default_cb();
-    }
-    ($cv, $cb);
-}
+has host => (is => 'rw', isa => 'Str', default => 'http://127.0.0.1:8098');
+has path => (is => 'rw', isa => 'Str', default => 'riak');
+has mapred_path => (is => 'rw', isa => 'Str', default => 'mapred');
+has r           => (is => 'rw', isa => 'Int', default => 2);
+has w           => (is => 'rw', isa => 'Int', default => 2);
+has dw          => (is => 'rw', isa => 'Int', default => 2);
+has client_id   => (
+    is  => 'rw',
+    isa => 'Str',
+    default =>
+      sub { "perl_anyevent_riak" . encode_base64(int(rand(10737411824)), '') }
+);
 
 sub is_alive {
     my ($self, %options) = @_;
@@ -94,7 +39,7 @@ sub is_alive {
     my ($cv, $cb) = $self->cvcb(\%options);
 
     http_request(
-        GET     => $self->_build_uri([qw/ping/]),
+        GET     => $self->_build_uri($self->host, [qw/ping/]),
         headers => $self->_build_headers($options{params}),
         sub {
             my ($body, $headers) = @_;
@@ -111,7 +56,6 @@ sub is_alive {
 
 sub list_bucket {
     my ($self, $bucket_name, %options) = @_;
-
     my ($cv, $cb) = $self->cvcb(\%options);
 
     http_request(
@@ -121,6 +65,7 @@ sub list_bucket {
         ),
         headers => $self->_build_headers($options{params}),
         sub {
+
             my ($body, $headers) = @_;
             if ($body && $headers->{Status} == 200) {
                 my $res = JSON::decode_json($body);
@@ -156,7 +101,6 @@ sub set_bucket {
     );
     $cv;
 }
-
 
 sub fetch {
     my ($self, $bucket, $key, %options) = @_;
@@ -228,6 +172,13 @@ sub delete {
     );
     $cv;
 }
+
+sub bucket {
+    my ($self, $name) = @_;
+    return AnyEvent::Riak::Bucket->new(name => $name, _client => $self);
+}
+
+no Moose;
 
 1;
 
