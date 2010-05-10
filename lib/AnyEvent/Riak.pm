@@ -20,7 +20,7 @@ sub new {
     my $path        = delete $args{path}        || 'riak';
     my $mapred_path = delete $args{mapred_path} || 'mapred';
     my $r           = delete $args{r}           || 2;
-    my $d           = delete $args{w}           || 2;
+    my $w           = delete $args{w}           || 2;
     my $dw          = delete $args{dw}          || 2;
 
     my $client_id =
@@ -32,7 +32,7 @@ sub new {
         mapred_path => $mapred_path,
         client_id   => $client_id,
         r           => $r,
-        d           => $d,
+        w           => $w,
         dw          => $dw,
         %args,
     }, $class;
