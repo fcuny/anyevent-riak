@@ -3,16 +3,18 @@ package AnyEvent::Riak::Bucket;
 use Moose;
 use AnyEvent::HTTP;
 
+use AnyEvent::Riak::Object;
+
 with qw/
   AnyEvent::Riak::Role::CVCB
   AnyEvent::Riak::Role::HTTPUtils
+  AnyEvent::Riak::Role::Client
   /;
 
-has _client => (is => 'rw', isa => 'AnyEvent::Riak', required => 1);
-has name    => (is => 'rw', isa => 'Str',            required => 1);
+has name => (is => 'rw', isa => 'Str', required => 1);
 has _properties =>
   (is => 'rw', isa => 'HashRef', predicate => '_has_properties');
-has r       => (
+has r => (
     is      => 'rw',
     isa     => 'Int',
     lazy    => 1,
@@ -42,7 +44,7 @@ sub get_properties {
     else {
         http_request(
             GET => $self->_build_uri(
-                $self->_client->host, [$self->_client->path, $self->name],
+                [$self->_client->path, $self->name],
                 $options{params}
             ),
             headers => $self->_build_headers($options{params}),
@@ -63,6 +65,26 @@ sub get_properties {
 }
 
 sub set_properties {
+    my ($self, $schema, %options) = @_;
+
+    my ($cv, $cb) = $self->cvcb(\%options);
+
+    http_request(
+        PUT =>
+          $self->_build_uri([$self->{path}, $self->name], $options{params}),
+        headers => $self->_build_headers($options{params}),
+        body    => JSON::encode_json({props => $schema}),
+        sub {
+            my ($body, $headers) = @_;
+            if ($headers->{Status} == 204) {
+                $cv->send($cb->(1));
+            }
+            else {
+                $cv->send($cb->(0));
+            }
+        }
+    );
+    return $cv;
 }
 
 sub create {
@@ -76,14 +98,14 @@ sub create {
     return $object;
 }
 
-sub get {
+sub object {
     my ($self, $key, $r) = @_;
     my $obj = AnyEvent::Riak::Object->new(
-        client => $self->_client,
+        _client => $self->_client,
         key    => $key,
         r      => $r,
         bucket => $self,
-    )->get;
+    );
 }
 
 no Moose;
