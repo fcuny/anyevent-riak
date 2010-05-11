@@ -39,7 +39,7 @@ sub is_alive {
     my ($cv, $cb) = $self->cvcb(\%options);
 
     http_request(
-        GET     => $self->_build_uri($self->host, [qw/ping/]),
+        GET     => $self->_build_uri([qw/ping/]),
         headers => $self->_build_headers($options{params}),
         sub {
             my ($body, $headers) = @_;
@@ -88,7 +88,7 @@ sub set_bucket {
         PUT =>
           $self->_build_uri([$self->{path}, $bucket], $options{params}),
         headers => $self->_build_headers($options{params}),
-        body    => JSON::encode_json($schema),
+        body    => JSON::encode_json({props => $schema}),
         sub {
             my ($body, $headers) = @_;
             if ($headers->{Status} == 204) {
@@ -210,7 +210,23 @@ L<https://wiki.basho.com/display/RIAK/REST+API>.
 
 AnyEvent::Riak is a non-blocking riak client using C<AnyEvent>. This client allows you to connect to a Riak instance, create, modify and delete Riak objects.
 
+There is two interfaces for this module :
+
+=over 4
+
+=item B<raw JSON>
+
+This interface will only serialize and deserialize JSON return from the Riak REST API.
+
+=item B<OO>
+
+This interface will turn Riak buckets into Object, the same for Riak objects.
+
+=back
+
 =head2 METHODS
+
+=head3 RAW
 
 =over 4
 
@@ -256,6 +272,7 @@ describing the bucket is returned.
 =item B<set_bucket>($bucketname, $bucketschema, [parameters => { }, callback => sub { }])
 
 Sets bucket properties like n_val and allow_mult.
+
 =over 2
 
 =item
@@ -270,7 +287,7 @@ allow_mult - whether to allow sibling objects to be created (concurrent updates)
 
 If successful, B<1> is returned, else B<0>.
 
-    my $result = $riak->set_bucket('bucket')->recv;
+    my $result = $riak->set_bucket('bucket'), {n_val => 5}->recv;
 
 =item B<fetch>($bucketname, $object, [parameters => { }, callback => sub { }])
 
@@ -281,6 +298,17 @@ Reads an object from a bucket.
 =item B<delete>($bucketname, $objectname, [parameters => { }, callback => sub { }]);
 
 =back
+
+=head3 OO
+
+=item B<bucket>($bucketname);
+
+Return a C<AnyEvent::Riak::Bucket> object.
+
+    my $r = AnyEvent::Riak->new(...);
+    my $bucket = $r->bucket('foo');
+    say $bucket->name;
+    say $bucket->properties->{props}->{nval};
 
 =head1 AUTHOR
 
