@@ -7,7 +7,7 @@ use Test::Exception;
 use AnyEvent::Riak;
 use YAML::Syck;
 
-#plan tests => 15;
+plan tests => 5;
 
 my ( $host, $path );
 
@@ -17,8 +17,6 @@ BEGIN {
     plan skip_all => 'set $ENV{RIAK_TEST_SERVER} if you want to run the tests'
       unless ($host && $path);
 }
-
-
 
 my $bucket = 'test';
 
@@ -30,48 +28,61 @@ ok my $riak = AnyEvent::Riak->new(
   ),
   'create riak object';
 
-my $cv = AnyEvent->condvar;
-$cv->begin(sub { $cv->send });
-$cv->begin;
+{
+    my $cv = AnyEvent->condvar;
+    $cv->begin(sub { $cv->send });
+    $cv->begin;
+    # ping
+    $riak->is_alive(
+        callback => sub {
+            my $res = shift;
+            pass "is alive in cb" if $res;
+            $cv->end;
+        }
+    );
+    $cv->end;
+    $cv->recv;
+}
 
-# ping
-$riak->is_alive(
-    callback => sub {
-        my $res = shift;
-        pass "is alive in cb" if $res;
-    }
-);
+{
+    my $cv = AnyEvent->condvar;
+    $cv->begin(sub { $cv->send });
+    $cv->begin;
+    # list bucket
+    $riak->list_bucket(
+        $bucket,
+        parameters => {props => 'true', keys => 'true'},
+        callback   => sub {
+            my $res = shift;
+            ok $res->{props}, 'got props';
+            $cv->end;
+        }
+    );
+    $cv->end;
+    $cv->recv;
+}
 
-# list bucket
-$riak->list_bucket(
-    'bar',
-    parameters => {props => 'true', keys => 'true'},
-    callback   => sub {
-        my $res = shift;
-        ok $res->{props}, 'got props';
-        is scalar @{$res->{keys}}, 0, '0 keys in cb';
-    }
-);
+{
+    my $value = {foo => 'bar',};
+    my $cv = AnyEvent->condvar;
+    $cv->begin(sub { $cv->send });
+    $cv->begin;
 
-my $value = {foo => 'bar',};
-
-# store object
-$riak->store(
-    'foo', 'bar3', $value,
-    callback => sub {
-        pass "store value ok";
-        $riak->fetch(
-            'foo', 'bar3',
-            callback => sub {
-                my $body = shift;
-                is_deeply($body, $value, 'value is ok in cb');
-                $cv->end;
-            }
-        );
-    }
-);
-
-$cv->end;
-$cv->recv;
-
-done_testing();
+    # store object
+    $riak->store(
+        $bucket, 'bar3', $value,
+        callback => sub {
+            pass "store value ok";
+            $riak->fetch(
+                'foo', 'bar3',
+                callback => sub {
+                    my $body = shift;
+                    is_deeply($body, $value, 'value is ok in cb');
+                    $cv->end;
+                }
+            );
+        }
+    );
+    $cv->end;
+    $cv->recv;
+}
